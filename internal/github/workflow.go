@@ -8,6 +8,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// WorkflowDownloader defines the interface for downloading workflow files.
+type WorkflowDownloader interface {
+	DownloadWorkflow(url string) ([]byte, error)
+}
+
 // Workflow represents a GitHub Actions workflow.
 type Workflow struct {
 	Jobs map[string]Job `yaml:"jobs"`
@@ -39,6 +44,12 @@ type ActionRef struct {
 	Raw   string // original uses string
 }
 
+// UsesNode represents a node in the uses dependency tree.
+type UsesNode struct {
+	Name     string
+	Children []*UsesNode
+}
+
 // ParseWorkflowYAML parses the workflow YAML into a Workflow struct.
 func ParseWorkflowYAML(data []byte) (*Workflow, error) {
 	var wf Workflow
@@ -54,7 +65,6 @@ func ParseWorkflowYAML(data []byte) (*Workflow, error) {
 func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) {
 	ar := ActionRef{Raw: uses}
 	if strings.HasPrefix(uses, "./") || strings.HasPrefix(uses, ".github/") {
-		// Local action
 		ar.Type = "local"
 		ar.Owner = repoOwner
 		ar.Repo = repoName
@@ -63,12 +73,10 @@ func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) 
 		ar.Path = strings.TrimPrefix(ar.Path, ".github/")
 		return ar, true
 	}
-	// Marketplace action: actions/checkout@v2
 	if strings.HasPrefix(uses, "actions/") && strings.Contains(uses, "@") {
 		ar.Type = "marketplace"
 		return ar, true
 	}
-	// Remote action: owner/repo/path@ref
 	re := regexp.MustCompile(`^([^/]+)/([^/@]+)(/[^@]*)?@(.+)$`)
 	matches := re.FindStringSubmatch(uses)
 	if len(matches) == 5 {
@@ -84,15 +92,10 @@ func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) 
 
 // FetchActionWorkflow tries to download and parse the action.yml or action.yaml for a given ActionRef.
 // Returns the parsed Workflow or nil if not found or not a composite action.
-func FetchActionWorkflow(client *Client, ar ActionRef) *Workflow {
+func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 	var urls []string
 	switch ar.Type {
-	case "local":
-		// Local action: https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}/action.yml
-		base := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", ar.Owner, ar.Repo, ar.Ref, strings.TrimSuffix(ar.Path, "/"))
-		urls = []string{base + "/action.yml", base + "/action.yaml"}
-	case "remote":
-		// Remote action: https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}/action.yml
+	case "local", "remote":
 		base := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", ar.Owner, ar.Repo, ar.Ref, strings.TrimSuffix(ar.Path, "/"))
 		urls = []string{base + "/action.yml", base + "/action.yaml"}
 	default:
@@ -111,8 +114,34 @@ func FetchActionWorkflow(client *Client, ar ActionRef) *Workflow {
 	return nil
 }
 
+// BuildUsesTree builds a hierarchical tree of uses dependencies starting from the given workflow.
+func BuildUsesTree(name string, wf *Workflow, fetcher func(string) *Workflow, depth int, visited map[string]bool) *UsesNode {
+	if depth == 0 || wf == nil || visited[name] {
+		return nil
+	}
+	visited[name] = true
+	node := &UsesNode{Name: name}
+	for _, job := range wf.Jobs {
+		for _, step := range job.Steps {
+			if step.Uses != "" {
+				child := &UsesNode{Name: step.Uses}
+				if fetcher != nil {
+					childWf := fetcher(step.Uses)
+					if childWf != nil {
+						subtree := BuildUsesTree(step.Uses, childWf, fetcher, depth-1, visited)
+						if subtree != nil {
+							child.Children = subtree.Children
+						}
+					}
+				}
+				node.Children = append(node.Children, child)
+			}
+		}
+	}
+	return node
+}
+
 // CollectAllUses recursively collects all 'uses' from a workflow and its referenced actions, up to a given depth.
-// The fetcher function should return a Workflow for a given uses string (e.g., a custom action path).
 func CollectAllUses(wf *Workflow, fetcher func(string) *Workflow, depth int) []string {
 	if depth == 0 || wf == nil {
 		return nil
@@ -134,6 +163,7 @@ func CollectAllUses(wf *Workflow, fetcher func(string) *Workflow, depth int) []s
 	return uses
 }
 
+// UnmarshalYAML custom unmarshal for NeedsList to support string or []string.
 func (n *NeedsList) UnmarshalYAML(value *yaml.Node) error {
 	var single string
 	if err := value.Decode(&single); err == nil {
@@ -146,4 +176,9 @@ func (n *NeedsList) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	return fmt.Errorf("invalid needs field: %v", value.Value)
+}
+
+// ExtractRepoInfoRegex returns the regex to extract owner, repo, branch from a raw.githubusercontent.com URL.
+func ExtractRepoInfoRegex() *regexp.Regexp {
+	return regexp.MustCompile(`https://raw.githubusercontent.com/([^/]+)/([^/]+)/([^/]+)/`)
 }

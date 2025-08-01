@@ -140,3 +140,108 @@ func TestParseActionRef_Unrecognized(t *testing.T) {
 	_, ok := ParseActionRef("echo hello", "", "", "")
 	assert.False(t, ok)
 }
+
+type mockClient struct {
+	DownloadWorkflowFunc func(url string) ([]byte, error)
+}
+
+func (m *mockClient) DownloadWorkflow(url string) ([]byte, error) {
+	return m.DownloadWorkflowFunc(url)
+}
+
+func TestBuildUsesTree_SimpleHierarchy(t *testing.T) {
+	// Simula: root -> a, b, reusable1 -> c, d, reusable2 -> e
+	root := &Workflow{
+		Jobs: map[string]Job{
+			"main": {
+				Steps: []Step{
+					{Uses: "a"},
+					{Uses: "b"},
+					{Uses: "reusable1"},
+				},
+			},
+		},
+	}
+	reusable1 := &Workflow{
+		Jobs: map[string]Job{
+			"job": {
+				Steps: []Step{
+					{Uses: "c"},
+					{Uses: "d"},
+					{Uses: "reusable2"},
+				},
+			},
+		},
+	}
+	reusable2 := &Workflow{
+		Jobs: map[string]Job{
+			"job": {
+				Steps: []Step{{Uses: "e"}},
+			},
+		},
+	}
+	fakeFetcher := func(uses string) *Workflow {
+		switch uses {
+		case "reusable1":
+			return reusable1
+		case "reusable2":
+			return reusable2
+		default:
+			return nil
+		}
+	}
+
+	tree := BuildUsesTree("root", root, fakeFetcher, 5, map[string]bool{})
+	assert.Equal(t, "root", tree.Name)
+	assert.Len(t, tree.Children, 3)
+	assert.Equal(t, "a", tree.Children[0].Name)
+	assert.Equal(t, "b", tree.Children[1].Name)
+	assert.Equal(t, "reusable1", tree.Children[2].Name)
+	assert.Len(t, tree.Children[2].Children, 3)
+	assert.Equal(t, "c", tree.Children[2].Children[0].Name)
+	assert.Equal(t, "d", tree.Children[2].Children[1].Name)
+	assert.Equal(t, "reusable2", tree.Children[2].Children[2].Name)
+	assert.Len(t, tree.Children[2].Children[2].Children, 1)
+	assert.Equal(t, "e", tree.Children[2].Children[2].Children[0].Name)
+}
+
+func TestFetchActionWorkflow_LocalAndRemote(t *testing.T) {
+	called := make(map[string]bool)
+	client := &mockClient{
+		DownloadWorkflowFunc: func(url string) ([]byte, error) {
+			called[url] = true
+			if url == "https://raw.githubusercontent.com/owner/repo/ref/path/action.yml" {
+				return []byte(`jobs: { job: { steps: [ { uses: "x" } ] } }`), nil
+			}
+			return nil, assert.AnError
+		},
+	}
+
+	ar := ActionRef{
+		Type:  "local",
+		Owner: "owner",
+		Repo:  "repo",
+		Ref:   "ref",
+		Path:  "path",
+	}
+	wf := FetchActionWorkflow(client, ar)
+	assert.NotNil(t, wf)
+	assert.Contains(t, wf.Jobs, "job")
+	assert.True(t, called["https://raw.githubusercontent.com/owner/repo/ref/path/action.yml"])
+
+	ar.Type = "remote"
+	wf2 := FetchActionWorkflow(client, ar)
+	assert.NotNil(t, wf2)
+}
+
+func TestFetchActionWorkflow_MarketplaceOrUnknown(t *testing.T) {
+	client := &mockClient{
+		DownloadWorkflowFunc: func(url string) ([]byte, error) {
+			return nil, assert.AnError
+		},
+	}
+	ar := ActionRef{Type: "marketplace"}
+	assert.Nil(t, FetchActionWorkflow(client, ar))
+	ar.Type = "unknown"
+	assert.Nil(t, FetchActionWorkflow(client, ar))
+}
