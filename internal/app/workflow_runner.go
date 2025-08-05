@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/leocomelli/wk2mmd/internal/diagram"
 	"github.com/leocomelli/wk2mmd/internal/github"
@@ -23,32 +24,18 @@ func NewWorkflowRunnerWithClient(client github.WorkflowDownloader) *WorkflowRunn
 }
 
 // RunWorkflowAnalysis orchestrates the download, parsing, recursive fetch, and tree/mermaid generation.
-func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, diagramType string) error {
-	fmt.Println("Diagram type:", diagramType)
-	fmt.Println("Depth:", depth)
-	fmt.Println("Workflow URL:", workflowURL)
+func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, diagramType string) (string, error) {
+	slog.Debug("Running workflow analysis", "workflowURL", workflowURL, "depth", depth, "diagramType", diagramType)
 
 	data, err := wr.client.DownloadWorkflow(workflowURL)
 	if err != nil {
-		return fmt.Errorf("failed to download workflow: %w", err)
+		return "", fmt.Errorf("failed to download workflow: %w", err)
 	}
-	fmt.Printf("Workflow content (first 300 bytes):\n%s\n", string(data[:min(300, len(data))]))
+	slog.Debug("Workflow content", "content", string(data[:min(300, len(data))]))
 
 	wf, err := github.ParseWorkflowYAML(data)
 	if err != nil {
-		return fmt.Errorf("failed to parse workflow YAML: %w", err)
-	}
-	fmt.Println("Jobs found:")
-	for jobName, job := range wf.Jobs {
-		fmt.Printf("- Job: %s\n", jobName)
-		if len(job.Needs) > 0 {
-			fmt.Printf("  Needs: %v\n", job.Needs)
-		}
-		for i, step := range job.Steps {
-			if step.Uses != "" {
-				fmt.Printf("  Step %d uses: %s\n", i+1, step.Uses)
-			}
-		}
+		return "", fmt.Errorf("failed to parse workflow YAML: %w", err)
 	}
 
 	// Recursively collect all uses and build the tree
@@ -60,30 +47,29 @@ func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, dia
 		}
 		wf := github.FetchActionWorkflow(wr.client, ar)
 		if wf != nil {
-			fmt.Printf("[DEBUG] Fetched reusable workflow: %s (jobs: %d)\n", uses, len(wf.Jobs))
+			slog.Debug("Fetched reusable workflow", "uses", uses, "jobs", len(wf.Jobs))
 		} else {
-			fmt.Printf("[DEBUG] Failed to fetch reusable workflow: %s\n", uses)
+			slog.Error("Failed to fetch reusable workflow", "uses", uses)
 		}
 		return wf
 	}
 	allUses := github.CollectAllUses(wf, fetcher, depth)
-	fmt.Println("All uses found recursively:")
-	for _, u := range allUses {
-		fmt.Println("-", u)
-	}
+
+	slog.Info("All uses found recursively", "uses", len(allUses))
 
 	tree := github.BuildUsesTree("workflow", wf, fetcher, depth, map[string]bool{})
-	fmt.Println("Uses tree:")
-	printUsesTree(tree, 0)
+	slog.Info("Uses tree", "tree", tree)
 
 	// Mermaid diagram generation
 	fmt.Println("\nMermaid diagram:")
-	if diagramType == "sequence" {
-		fmt.Println(diagram.GenerateMermaidSequence(tree))
-	} else {
-		fmt.Println(diagram.GenerateMermaidFlowchart(tree))
+	switch diagramType {
+	case "sequence":
+		return diagram.GenerateMermaidSequence(tree), nil
+	case "flowchart":
+		return diagram.GenerateMermaidFlowchart(tree), nil
+	default:
+		return "", fmt.Errorf("invalid diagram type: %s", diagramType)
 	}
-	return nil
 }
 
 func min(a, b int) int {

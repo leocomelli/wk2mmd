@@ -21,7 +21,14 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workflowURL := args[0]
 		runner := app.NewWorkflowRunner(token)
-		return runner.RunWorkflowAnalysis(workflowURL, depth, diagramType)
+		output, err := runner.RunWorkflowAnalysis(workflowURL, depth, diagramType)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(output)
+
+		return nil
 	},
 }
 

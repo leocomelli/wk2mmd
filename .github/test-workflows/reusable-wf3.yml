@@ -20,4 +20,4 @@ jobs:
 
   call_workflow_4:
     needs: test
-    uses: .github/workflows/reusable-wf4.yml
+    uses: leocomelli/wk2mmd/.github/test-workflows/reusable-wf4.yml

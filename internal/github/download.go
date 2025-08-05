@@ -11,6 +11,10 @@ import (
 // DownloadWorkflow downloads a GitHub Actions workflow YAML file from the given full URL or local file path.
 func (c *Client) DownloadWorkflow(url string) ([]byte, error) {
 	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
+		// If the URL is of the form github.com/{owner}/{repo}/blob/{branch}/{path}, convert it to raw.githubusercontent.com
+		if strings.Contains(url, "github.com/") && strings.Contains(url, "/blob/") {
+			url = convertToRawURL(url)
+		}
 		// Default: HTTP(S) download
 		req, err := c.newRequest("GET", url)
 		if err != nil {
@@ -47,4 +51,14 @@ func (c *Client) DownloadWorkflow(url string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read local file: %w", err)
 	}
 	return data, nil
+}
+
+// convertToRawURL converts a URL of the form github.com/{owner}/{repo}/blob/{branch}/{path}
+// to raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}.
+func convertToRawURL(url string) string {
+	// Example: https://github.com/owner/repo/blob/branch/path/to/file.yml
+	// To:      https://raw.githubusercontent.com/owner/repo/branch/path/to/file.yml
+	url = strings.Replace(url, "https://github.com/", "https://raw.githubusercontent.com/", 1)
+	url = strings.Replace(url, "/blob/", "/", 1)
+	return url
 }

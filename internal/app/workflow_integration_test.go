@@ -1,25 +1,21 @@
-package diagram
+//go:build integration
+// +build integration
+
+package app
 
 import (
-	"os"
 	"sort"
 	"strings"
 	"testing"
-
-	"github.com/leocomelli/wk2mmd/internal/github"
 )
 
-func TestGenerateMermaidFlowchart_RealWorkflow_Output(t *testing.T) {
-	data, err := os.ReadFile("https://github.com/leocomelli/wk2mmd/blob/main/.github/workflows/reusable-wf1.yml")
+func TestRunWorkflowAnalysis_Integration(t *testing.T) {
+
+	runner := NewWorkflowRunner("")
+	output, err := runner.RunWorkflowAnalysis("https://github.com/leocomelli/wk2mmd/blob/main/.github/test-workflows/reusable-wf1.yml", 10, "flowchart")
 	if err != nil {
-		t.Fatalf("Failed to read workflow file: %v", err)
+		t.Fatalf("Failed to run workflow analysis: %v", err)
 	}
-	wf, err := github.ParseWorkflowYAML(data)
-	if err != nil {
-		t.Fatalf("Failed to parse workflow YAML: %v", err)
-	}
-	tree := github.BuildUsesTree("workflow", wf, nil, 5, map[string]bool{})
-	output := GenerateMermaidFlowchart(tree)
 
 	expected := `
 ---

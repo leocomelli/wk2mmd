@@ -105,3 +105,29 @@ func TestDownloadWorkflow_HTTPErrorStatus(t *testing.T) {
 		t.Errorf("Expected error for HTTP 404")
 	}
 }
+
+func TestConvertToRawURL(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{
+			input: "https://github.com/owner/repo/blob/branch/path/to/file.yml",
+			want:  "https://raw.githubusercontent.com/owner/repo/branch/path/to/file.yml",
+		},
+		{
+			input: "https://github.com/leocomelli/wk2mmd/blob/main/.github/test-workflows/reusable-wf1.yml",
+			want:  "https://raw.githubusercontent.com/leocomelli/wk2mmd/main/.github/test-workflows/reusable-wf1.yml",
+		},
+		{
+			input: "https://raw.githubusercontent.com/owner/repo/branch/path/to/file.yml",
+			want:  "https://raw.githubusercontent.com/owner/repo/branch/path/to/file.yml",
+		},
+	}
+	for _, c := range cases {
+		got := convertToRawURL(c.input)
+		if got != c.want {
+			t.Errorf("convertToRawURL(%q) = %q; want %q", c.input, got, c.want)
+		}
+	}
+}

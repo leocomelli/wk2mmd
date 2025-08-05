@@ -20,4 +20,4 @@ jobs:
 
   call_workflow_2:
     needs: job_b
-    uses: .github/workflows/reusable-wf2.yml
+    uses: leocomelli/wk2mmd/.github/test-workflows/reusable-wf2.yml

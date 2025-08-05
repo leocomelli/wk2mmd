@@ -22,7 +22,7 @@ func TestRunWorkflowAnalysis_Success(t *testing.T) {
 		},
 	}
 	runner := NewWorkflowRunnerWithClient(client)
-	err := runner.RunWorkflowAnalysis("https://raw.githubusercontent.com/owner/repo/branch/file.yml", 2, "flowchart")
+	_, err := runner.RunWorkflowAnalysis("https://raw.githubusercontent.com/owner/repo/branch/file.yml", 2, "flowchart")
 	assert.NoError(t, err)
 }
 
@@ -33,7 +33,7 @@ func TestRunWorkflowAnalysis_DownloadFail(t *testing.T) {
 		},
 	}
 	runner := NewWorkflowRunnerWithClient(client)
-	err := runner.RunWorkflowAnalysis("https://raw.githubusercontent.com/owner/repo/branch/file.yml", 2, "flowchart")
+	_, err := runner.RunWorkflowAnalysis("https://raw.githubusercontent.com/owner/repo/branch/file.yml", 2, "flowchart")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to download workflow")
 }
@@ -45,7 +45,7 @@ func TestRunWorkflowAnalysis_ParseFail(t *testing.T) {
 		},
 	}
 	runner := NewWorkflowRunnerWithClient(client)
-	err := runner.RunWorkflowAnalysis("https://raw.githubusercontent.com/owner/repo/branch/file.yml", 2, "flowchart")
+	_, err := runner.RunWorkflowAnalysis("https://raw.githubusercontent.com/owner/repo/branch/file.yml", 2, "flowchart")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to parse workflow YAML")
 }
