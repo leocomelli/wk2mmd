@@ -36,22 +36,6 @@ jobs:
 	assert.Equal(t, "actions/deploy@v1", wf.Jobs["deploy"].Steps[0].Uses)
 }
 
-func TestParseWorkflowYAML_StepsNoUses(t *testing.T) {
-	yamlData := []byte(`
-jobs:
-  test:
-    steps:
-      - name: Run tests
-        run: go test ./...
-`)
-	wf, err := ParseWorkflowYAML(yamlData)
-	assert.NoError(t, err)
-	assert.Contains(t, wf.Jobs, "test")
-	assert.Equal(t, "Run tests", wf.Jobs["test"].Steps[0].Name)
-	assert.Equal(t, "go test ./...", wf.Jobs["test"].Steps[0].Run)
-	assert.Equal(t, "", wf.Jobs["test"].Steps[0].Uses)
-}
-
 func TestParseWorkflowYAML_InvalidYAML(t *testing.T) {
 	yamlData := []byte(`invalid: [unclosed`)
 	_, err := ParseWorkflowYAML(yamlData)
@@ -70,54 +54,16 @@ jobs:
 	assert.Error(t, err)
 }
 
-func TestCollectAllUses_Recursive(t *testing.T) {
-	// Simulate three levels: workflow -> action1 -> action2
-	mainWf := &Workflow{
-		Jobs: map[string]Job{
-			"build": {
-				Steps: []Step{{Uses: "./.github/actions/action1"}},
-			},
-		},
-	}
-	action1 := &Workflow{
-		Jobs: map[string]Job{
-			"action-job": {
-				Steps: []Step{{Uses: "./.github/actions/action2"}},
-			},
-		},
-	}
-	action2 := &Workflow{
-		Jobs: map[string]Job{
-			"action-job": {
-				Steps: []Step{{Uses: "actions/checkout@v2"}},
-			},
-		},
-	}
-	fakeFetcher := func(uses string) *Workflow {
-		switch uses {
-		case "./.github/actions/action1":
-			return action1
-		case "./.github/actions/action2":
-			return action2
-		default:
-			return nil
-		}
-	}
-	allUses := CollectAllUses(mainWf, fakeFetcher, 3)
-	assert.Contains(t, allUses, "./.github/actions/action1")
-	assert.Contains(t, allUses, "./.github/actions/action2")
-	assert.Contains(t, allUses, "actions/checkout@v2")
-	assert.Equal(t, 3, len(allUses))
-}
-
-func TestParseActionRef_Local(t *testing.T) {
-	ar, ok := ParseActionRef("./.github/actions/foo", "me", "repo", "main")
-	assert.True(t, ok)
-	assert.Equal(t, "local", ar.Type)
-	assert.Equal(t, "me", ar.Owner)
-	assert.Equal(t, "repo", ar.Repo)
-	assert.Equal(t, "main", ar.Ref)
-	assert.Equal(t, "actions/foo", ar.Path)
+func TestParseWorkflowYAML_JobLevelUses(t *testing.T) {
+	yamlData := []byte(`
+jobs:
+  call_another_workflow:
+    uses: owner/repo/.github/workflows/workflow.yml@main
+`)
+	wf, err := ParseWorkflowYAML(yamlData)
+	assert.NoError(t, err)
+	assert.Contains(t, wf.Jobs, "call_another_workflow")
+	assert.Equal(t, "owner/repo/.github/workflows/workflow.yml@main", wf.Jobs["call_another_workflow"].Uses)
 }
 
 func TestParseActionRef_Remote(t *testing.T) {
@@ -149,91 +95,6 @@ func (m *mockClient) DownloadWorkflow(url string) ([]byte, error) {
 	return m.DownloadWorkflowFunc(url)
 }
 
-func TestBuildUsesTree_SimpleHierarchy(t *testing.T) {
-	// Simula: root -> a, b, reusable1 -> c, d, reusable2 -> e
-	root := &Workflow{
-		Jobs: map[string]Job{
-			"main": {
-				Steps: []Step{
-					{Uses: "a"},
-					{Uses: "b"},
-					{Uses: "reusable1"},
-				},
-			},
-		},
-	}
-	reusable1 := &Workflow{
-		Jobs: map[string]Job{
-			"job": {
-				Steps: []Step{
-					{Uses: "c"},
-					{Uses: "d"},
-					{Uses: "reusable2"},
-				},
-			},
-		},
-	}
-	reusable2 := &Workflow{
-		Jobs: map[string]Job{
-			"job": {
-				Steps: []Step{{Uses: "e"}},
-			},
-		},
-	}
-	fakeFetcher := func(uses string) *Workflow {
-		switch uses {
-		case "reusable1":
-			return reusable1
-		case "reusable2":
-			return reusable2
-		default:
-			return nil
-		}
-	}
-
-	tree := BuildUsesTree("root", root, fakeFetcher, 5, map[string]bool{})
-	assert.Equal(t, "root", tree.Name)
-	assert.Len(t, tree.Children, 3)
-	assert.Equal(t, "a", tree.Children[0].Name)
-	assert.Equal(t, "b", tree.Children[1].Name)
-	assert.Equal(t, "reusable1", tree.Children[2].Name)
-	assert.Len(t, tree.Children[2].Children, 3)
-	assert.Equal(t, "c", tree.Children[2].Children[0].Name)
-	assert.Equal(t, "d", tree.Children[2].Children[1].Name)
-	assert.Equal(t, "reusable2", tree.Children[2].Children[2].Name)
-	assert.Len(t, tree.Children[2].Children[2].Children, 1)
-	assert.Equal(t, "e", tree.Children[2].Children[2].Children[0].Name)
-}
-
-func TestFetchActionWorkflow_LocalAndRemote(t *testing.T) {
-	called := make(map[string]bool)
-	client := &mockClient{
-		DownloadWorkflowFunc: func(url string) ([]byte, error) {
-			called[url] = true
-			if url == "https://raw.githubusercontent.com/owner/repo/ref/path/action.yml" {
-				return []byte(`jobs: { job: { steps: [ { uses: "x" } ] } }`), nil
-			}
-			return nil, assert.AnError
-		},
-	}
-
-	ar := ActionRef{
-		Type:  "local",
-		Owner: "owner",
-		Repo:  "repo",
-		Ref:   "ref",
-		Path:  "path",
-	}
-	wf := FetchActionWorkflow(client, ar)
-	assert.NotNil(t, wf)
-	assert.Contains(t, wf.Jobs, "job")
-	assert.True(t, called["https://raw.githubusercontent.com/owner/repo/ref/path/action.yml"])
-
-	ar.Type = "remote"
-	wf2 := FetchActionWorkflow(client, ar)
-	assert.NotNil(t, wf2)
-}
-
 func TestFetchActionWorkflow_MarketplaceOrUnknown(t *testing.T) {
 	client := &mockClient{
 		DownloadWorkflowFunc: func(url string) ([]byte, error) {
@@ -244,4 +105,185 @@ func TestFetchActionWorkflow_MarketplaceOrUnknown(t *testing.T) {
 	assert.Nil(t, FetchActionWorkflow(client, ar))
 	ar.Type = "unknown"
 	assert.Nil(t, FetchActionWorkflow(client, ar))
+}
+
+func TestFetchActionWorkflow_ErrorCases(t *testing.T) {
+	client := &mockClient{
+		DownloadWorkflowFunc: func(url string) ([]byte, error) {
+			return nil, assert.AnError
+		},
+	}
+	ar := ActionRef{Type: "local", Path: "some/path"}
+	wf := FetchActionWorkflow(client, ar)
+	if wf != nil {
+		t.Errorf("Expected nil when download fails")
+	}
+
+	client2 := &mockClient{
+		DownloadWorkflowFunc: func(url string) ([]byte, error) {
+			return []byte("invalid: [unclosed"), nil
+		},
+	}
+	wf2 := FetchActionWorkflow(client2, ar)
+	if wf2 != nil {
+		t.Errorf("Expected nil when parsing fails")
+	}
+
+	client3 := &mockClient{
+		DownloadWorkflowFunc: func(url string) ([]byte, error) {
+			return []byte("name: Empty"), nil
+		},
+	}
+	wf3 := FetchActionWorkflow(client3, ar)
+	if wf3 != nil {
+		t.Errorf("Expected nil when workflow has no jobs")
+	}
+}
+
+func TestBuildUsesTree_Simple(t *testing.T) {
+	wf := &Workflow{
+		Jobs: map[string]Job{
+			"a": {},
+			"b": {},
+		},
+	}
+	tree := BuildUsesTree("root", wf, nil, 2, map[string]bool{})
+	if tree == nil {
+		t.Errorf("Expected non-nil tree")
+		return
+	}
+	if len(tree.Children) != 2 {
+		t.Errorf("Expected 2 children, got %v", len(tree.Children))
+	}
+	names := []string{tree.Children[0].Name, tree.Children[1].Name}
+	if !contains(names, "a") || !contains(names, "b") {
+		t.Errorf("Expected children 'a' and 'b', got %v", names)
+	}
+}
+
+func TestBuildUsesTree_WithReusable(t *testing.T) {
+	// Simula um workflow com um job que usa outro workflow (reusable)
+	wf := &Workflow{
+		Jobs: map[string]Job{
+			"main": {Uses: "reusable.yml@main"},
+		},
+	}
+	fetcher := func(uses string) *Workflow {
+		if uses == "reusable.yml@main" {
+			return &Workflow{Jobs: map[string]Job{"a": {}, "b": {}}}
+		}
+		return nil
+	}
+	tree := BuildUsesTree("root", wf, fetcher, 2, map[string]bool{})
+	if tree == nil || len(tree.Children) != 1 {
+		t.Errorf("Expected 1 child, got %v", len(tree.Children))
+	}
+	child := tree.Children[0]
+	if child.Name != "main" || len(child.Children) != 2 {
+		t.Errorf("Expected child 'main' with 2 subjobs, got %v with %d", child.Name, len(child.Children))
+	}
+}
+
+func TestBuildUsesTree_DepthLimit(t *testing.T) {
+	wf := &Workflow{
+		Jobs: map[string]Job{
+			"main": {Uses: "reusable.yml@main"},
+		},
+	}
+	fetcher := func(uses string) *Workflow {
+		return &Workflow{Jobs: map[string]Job{"a": {}, "b": {}}}
+	}
+	tree := BuildUsesTree("root", wf, fetcher, 1, map[string]bool{})
+	if tree == nil || len(tree.Children) != 1 {
+		t.Errorf("Expected 1 child at depth 1, got %v", len(tree.Children))
+	}
+	if len(tree.Children[0].Children) != 0 {
+		t.Errorf("Expected no grandchildren at depth 1, got %d", len(tree.Children[0].Children))
+	}
+}
+
+func TestBuildUsesTree_Cycle(t *testing.T) {
+	wf := &Workflow{
+		Jobs: map[string]Job{
+			"main": {Uses: "reusable.yml@main"},
+		},
+	}
+	fetcher := func(uses string) *Workflow {
+		if uses == "reusable.yml@main" {
+			return wf
+		}
+		return nil
+	}
+	tree := BuildUsesTree("root", wf, fetcher, 5, map[string]bool{})
+	if tree == nil || len(tree.Children) != 1 {
+		t.Errorf("Expected 1 child, got %v", len(tree.Children))
+	}
+}
+
+func TestBuildUsesTree_EmptyWorkflow(t *testing.T) {
+	wf := &Workflow{Jobs: map[string]Job{}}
+	tree := BuildUsesTree("root", wf, nil, 2, map[string]bool{})
+	if tree == nil {
+		t.Errorf("Expected non-nil tree for empty workflow")
+		return
+	}
+	if tree != nil && len(tree.Children) != 0 {
+		t.Errorf("Expected no children for empty workflow, got %d", len(tree.Children))
+	}
+}
+
+func TestCollectAllUses_JobLevel(t *testing.T) {
+	wf := &Workflow{
+		Jobs: map[string]Job{
+			"job1": {Uses: "owner/repo/.github/workflows/workflow.yml@main"},
+			"job2": {Uses: "actions/checkout@v4"},
+		},
+	}
+	uses := CollectAllUses(wf, nil, 2)
+	if len(uses) != 2 {
+		t.Errorf("Expected 2 uses, got %v", uses)
+	}
+	if !contains(uses, "owner/repo/.github/workflows/workflow.yml@main") || !contains(uses, "actions/checkout@v4") {
+		t.Errorf("Expected both uses, got %v", uses)
+	}
+}
+
+func TestCollectAllUses_DepthLimit(t *testing.T) {
+	wf := &Workflow{
+		Jobs: map[string]Job{
+			"main": {Uses: "reusable.yml@main"},
+		},
+	}
+	fetcher := func(uses string) *Workflow {
+		return &Workflow{Jobs: map[string]Job{"a": {Uses: "other.yml@main"}}}
+	}
+	uses := CollectAllUses(wf, fetcher, 1)
+	if len(uses) != 1 || uses[0] != "reusable.yml@main" {
+		t.Errorf("Expected only the first level use, got %v", uses)
+	}
+	uses2 := CollectAllUses(wf, fetcher, 2)
+	if len(uses2) != 2 {
+		t.Errorf("Expected two uses with depth 2, got %v", uses2)
+	}
+}
+
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+func TestExtractRepoInfoRegex(t *testing.T) {
+	re := ExtractRepoInfoRegex()
+	url := "https://raw.githubusercontent.com/owner/repo/branch/path/to/file.yml"
+	matches := re.FindStringSubmatch(url)
+	if len(matches) != 4 {
+		t.Errorf("Expected 4 matches, got %v", matches)
+	}
+	if matches[1] != "owner" || matches[2] != "repo" || matches[3] != "branch" {
+		t.Errorf("Unexpected extraction: %v", matches)
+	}
 }

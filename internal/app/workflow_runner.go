@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 
+	"github.com/leocomelli/wk2mmd/internal/diagram"
 	"github.com/leocomelli/wk2mmd/internal/github"
 )
 
@@ -11,17 +12,17 @@ type WorkflowRunner struct {
 	client github.WorkflowDownloader
 }
 
-// NewWorkflowRunner creates a new WorkflowRunner with the given token (normal usage).
+// NewWorkflowRunner creates a WorkflowRunner for normal use.
 func NewWorkflowRunner(token string) *WorkflowRunner {
 	return &WorkflowRunner{client: github.NewClient(token)}
 }
 
-// NewWorkflowRunnerWithClient creates a new WorkflowRunner with a custom client (for testing).
+// NewWorkflowRunnerWithClient creates a WorkflowRunner for testing.
 func NewWorkflowRunnerWithClient(client github.WorkflowDownloader) *WorkflowRunner {
 	return &WorkflowRunner{client: client}
 }
 
-// RunWorkflowAnalysis orchestrates the download, parsing, recursive fetch, and tree building for a workflow.
+// RunWorkflowAnalysis orchestrates the download, parsing, recursive fetch, and tree/mermaid generation.
 func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, diagramType string) error {
 	fmt.Println("Diagram type:", diagramType)
 	fmt.Println("Depth:", depth)
@@ -57,7 +58,13 @@ func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, dia
 		if !ok {
 			return nil
 		}
-		return github.FetchActionWorkflow(wr.client, ar)
+		wf := github.FetchActionWorkflow(wr.client, ar)
+		if wf != nil {
+			fmt.Printf("[DEBUG] Fetched reusable workflow: %s (jobs: %d)\n", uses, len(wf.Jobs))
+		} else {
+			fmt.Printf("[DEBUG] Failed to fetch reusable workflow: %s\n", uses)
+		}
+		return wf
 	}
 	allUses := github.CollectAllUses(wf, fetcher, depth)
 	fmt.Println("All uses found recursively:")
@@ -68,6 +75,14 @@ func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, dia
 	tree := github.BuildUsesTree("workflow", wf, fetcher, depth, map[string]bool{})
 	fmt.Println("Uses tree:")
 	printUsesTree(tree, 0)
+
+	// Mermaid diagram generation
+	fmt.Println("\nMermaid diagram:")
+	if diagramType == "sequence" {
+		fmt.Println(diagram.GenerateMermaidSequence(tree))
+	} else {
+		fmt.Println(diagram.GenerateMermaidFlowchart(tree))
+	}
 	return nil
 }
 

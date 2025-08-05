@@ -22,6 +22,7 @@ type Workflow struct {
 type Job struct {
 	Needs NeedsList `yaml:"needs"`
 	Steps []Step    `yaml:"steps"`
+	Uses  string    `yaml:"uses"`
 }
 
 // Step represents a step in a job.
@@ -69,8 +70,7 @@ func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) 
 		ar.Owner = repoOwner
 		ar.Repo = repoName
 		ar.Ref = branch
-		ar.Path = strings.TrimPrefix(uses, "./")
-		ar.Path = strings.TrimPrefix(ar.Path, ".github/")
+		ar.Path = uses
 		return ar, true
 	}
 	if strings.HasPrefix(uses, "actions/") && strings.Contains(uses, "@") {
@@ -95,7 +95,9 @@ func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) 
 func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 	var urls []string
 	switch ar.Type {
-	case "local", "remote":
+	case "local":
+		urls = []string{ar.Path}
+	case "remote":
 		base := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", ar.Owner, ar.Repo, ar.Ref, strings.TrimSuffix(ar.Path, "/"))
 		urls = []string{base + "/action.yml", base + "/action.yaml"}
 	default:
@@ -120,23 +122,52 @@ func BuildUsesTree(name string, wf *Workflow, fetcher func(string) *Workflow, de
 		return nil
 	}
 	visited[name] = true
+
 	node := &UsesNode{Name: name}
-	for _, job := range wf.Jobs {
+	for jobName, job := range wf.Jobs {
+		if job.Uses != "" {
+			child := &UsesNode{Name: jobName}
+			if fetcher != nil && depth > 1 {
+				childWf := fetcher(job.Uses)
+				if childWf != nil {
+					for subJobName, subJob := range childWf.Jobs {
+						if subJob.Uses != "" && fetcher != nil && depth > 2 {
+							subChildWf := fetcher(subJob.Uses)
+							subChild := &UsesNode{Name: subJobName}
+							if subChildWf != nil {
+								subtree := BuildUsesTree(subJobName, subChildWf, fetcher, depth-2, visited)
+								if subtree != nil {
+									subChild.Children = subtree.Children
+								}
+							}
+							child.Children = append(child.Children, subChild)
+						} else {
+							child.Children = append(child.Children, &UsesNode{Name: subJobName})
+						}
+					}
+				}
+			}
+			node.Children = append(node.Children, child)
+			continue
+		}
+		// If not a reusable, just add the job and its steps
+		jobNode := &UsesNode{Name: jobName}
 		for _, step := range job.Steps {
 			if step.Uses != "" {
-				child := &UsesNode{Name: step.Uses}
-				if fetcher != nil {
+				stepNode := &UsesNode{Name: step.Uses}
+				if fetcher != nil && depth > 1 {
 					childWf := fetcher(step.Uses)
 					if childWf != nil {
 						subtree := BuildUsesTree(step.Uses, childWf, fetcher, depth-1, visited)
 						if subtree != nil {
-							child.Children = subtree.Children
+							stepNode.Children = subtree.Children
 						}
 					}
 				}
-				node.Children = append(node.Children, child)
+				jobNode.Children = append(jobNode.Children, stepNode)
 			}
 		}
+		node.Children = append(node.Children, jobNode)
 	}
 	return node
 }
@@ -148,17 +179,28 @@ func CollectAllUses(wf *Workflow, fetcher func(string) *Workflow, depth int) []s
 	}
 	var uses []string
 	for _, job := range wf.Jobs {
-		for _, step := range job.Steps {
-			if step.Uses != "" {
-				uses = append(uses, step.Uses)
-				if fetcher != nil {
-					childWf := fetcher(step.Uses)
-					if childWf != nil {
-						uses = append(uses, CollectAllUses(childWf, fetcher, depth-1)...)
-					}
+		// Job-level uses
+		if job.Uses != "" {
+			uses = append(uses, job.Uses)
+			if fetcher != nil {
+				childWf := fetcher(job.Uses)
+				if childWf != nil {
+					uses = append(uses, CollectAllUses(childWf, fetcher, depth-1)...)
 				}
 			}
 		}
+		// Step-level uses
+		// for _, step := range job.Steps {
+		// 	if step.Uses != "" {
+		// 		uses = append(uses, step.Uses)
+		// 		if fetcher != nil {
+		// 			childWf := fetcher(step.Uses)
+		// 			if childWf != nil {
+		// 				uses = append(uses, CollectAllUses(childWf, fetcher, depth-1)...)
+		// 			}
+		// 		}
+		// 	}
+		// }
 	}
 	return uses
 }
