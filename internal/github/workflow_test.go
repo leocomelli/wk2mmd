@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 `)
-	wf, err := ParseWorkflowYAML(yamlData)
+	wf, err := ParseWorkflowYAML("", yamlData)
 	assert.NoError(t, err)
 	assert.Contains(t, wf.Jobs, "build")
 	assert.Equal(t, NeedsList{"test"}, wf.Jobs["build"].Needs)
@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/deploy@v1
 `)
-	wf, err := ParseWorkflowYAML(yamlData)
+	wf, err := ParseWorkflowYAML("", yamlData)
 	assert.NoError(t, err)
 	assert.Contains(t, wf.Jobs, "deploy")
 	assert.Equal(t, NeedsList{"build", "test"}, wf.Jobs["deploy"].Needs)
@@ -38,7 +38,7 @@ jobs:
 
 func TestParseWorkflowYAML_InvalidYAML(t *testing.T) {
 	yamlData := []byte(`invalid: [unclosed`)
-	_, err := ParseWorkflowYAML(yamlData)
+	_, err := ParseWorkflowYAML("", yamlData)
 	assert.Error(t, err)
 }
 
@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 `)
-	_, err := ParseWorkflowYAML(yamlData)
+	_, err := ParseWorkflowYAML("", yamlData)
 	assert.Error(t, err)
 }
 
@@ -60,7 +60,7 @@ jobs:
   call_another_workflow:
     uses: owner/repo/.github/workflows/workflow.yml@main
 `)
-	wf, err := ParseWorkflowYAML(yamlData)
+	wf, err := ParseWorkflowYAML("", yamlData)
 	assert.NoError(t, err)
 	assert.Contains(t, wf.Jobs, "call_another_workflow")
 	assert.Equal(t, "owner/repo/.github/workflows/workflow.yml@main", wf.Jobs["call_another_workflow"].Uses)

@@ -9,13 +9,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// WorkflowDownloader defines the interface for downloading workflow files.
-type WorkflowDownloader interface {
-	DownloadWorkflow(url string) ([]byte, error)
-}
-
 // Workflow represents a GitHub Actions workflow.
 type Workflow struct {
+	Name string         `yaml:"name"`
+	URL  string         `yaml:"url"`
 	Jobs map[string]Job `yaml:"jobs"`
 }
 
@@ -53,11 +50,12 @@ type UsesNode struct {
 }
 
 // ParseWorkflowYAML parses the workflow YAML into a Workflow struct.
-func ParseWorkflowYAML(data []byte) (*Workflow, error) {
+func ParseWorkflowYAML(url string, data []byte) (*Workflow, error) {
 	var wf Workflow
 	if err := yaml.Unmarshal(data, &wf); err != nil {
 		return nil, fmt.Errorf("failed to parse workflow YAML: %w", err)
 	}
+	wf.URL = url
 	return &wf, nil
 }
 
@@ -71,6 +69,9 @@ func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) 
 	if strings.HasPrefix(uses, "./") || strings.HasPrefix(uses, ".github/") {
 		ar.Type = "local"
 		ar.Path = uses
+
+		slog.Debug("Identified a local action", "uses", uses, "path", ar.Path)
+
 		return ar, true
 	}
 
@@ -80,6 +81,9 @@ func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) 
 	ar.Repo = repoName
 	ar.Ref = branch
 	ar.Path = strings.TrimPrefix(uses, fmt.Sprintf("%s/%s/", repoOwner, repoName))
+
+	slog.Debug("Identified a remote action", "uses", uses, "owner", ar.Owner, "repo", ar.Repo, "ref", ar.Ref, "path", ar.Path)
+
 	return ar, true
 }
 
@@ -96,13 +100,16 @@ func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 	default:
 		return nil
 	}
+
+	slog.Debug("Fetching action workflow", "urls", urls)
+
 	for _, url := range urls {
 		data, err := client.DownloadWorkflow(url)
 		if err != nil {
 			slog.Error("Failed to download workflow", "url", url, "error", err)
 			continue
 		}
-		wf, err := ParseWorkflowYAML(data)
+		wf, err := ParseWorkflowYAML(url, data)
 		if err == nil && wf != nil && len(wf.Jobs) > 0 {
 			return wf
 		}
@@ -171,6 +178,9 @@ func CollectAllUses(wf *Workflow, fetcher func(string) *Workflow, depth int) []s
 	if depth == 0 || wf == nil {
 		return nil
 	}
+
+	slog.Info("Getting all uses", "workflow", wf.Name, "url", wf.URL)
+
 	var uses []string
 	for _, job := range wf.Jobs {
 		// Job-level uses

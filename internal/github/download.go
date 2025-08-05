@@ -3,15 +3,22 @@ package github
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 )
 
+// WorkflowDownloader defines the interface for downloading workflow files.
+type WorkflowDownloader interface {
+	DownloadWorkflow(url string) ([]byte, error)
+}
+
 // DownloadWorkflow downloads a GitHub Actions workflow YAML file from the given full URL or local file path.
 func (c *Client) DownloadWorkflow(url string) ([]byte, error) {
 	if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-		// If the URL is of the form github.com/{owner}/{repo}/blob/{branch}/{path}, convert it to raw.githubusercontent.com
+		slog.Debug("Downloading workflow from URL", "url", url)
+
 		if strings.Contains(url, "github.com/") && strings.Contains(url, "/blob/") {
 			url = convertToRawURL(url)
 		}
@@ -40,6 +47,8 @@ func (c *Client) DownloadWorkflow(url string) ([]byte, error) {
 		return data, nil
 	}
 
+	slog.Debug("Downloading workflow from local file", "url", url)
+
 	// Support local files: file:// or plain path
 	path := url
 	if strings.HasPrefix(url, "file://") {
@@ -56,9 +65,13 @@ func (c *Client) DownloadWorkflow(url string) ([]byte, error) {
 // convertToRawURL converts a URL of the form github.com/{owner}/{repo}/blob/{branch}/{path}
 // to raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}.
 func convertToRawURL(url string) string {
-	// Example: https://github.com/owner/repo/blob/branch/path/to/file.yml
-	// To:      https://raw.githubusercontent.com/owner/repo/branch/path/to/file.yml
-	url = strings.Replace(url, "https://github.com/", "https://raw.githubusercontent.com/", 1)
-	url = strings.Replace(url, "/blob/", "/", 1)
+	if strings.HasPrefix(url, "https://github.com/") {
+
+		slog.Debug("Converting GitHub URL to raw URL", "url", url)
+
+		url = strings.Replace(url, "https://github.com/", "https://raw.githubusercontent.com/", 1)
+		url = strings.Replace(url, "/blob/", "/", 1)
+		return url
+	}
 	return url
 }

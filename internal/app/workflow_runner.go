@@ -25,7 +25,6 @@ func NewWorkflowRunnerWithClient(client github.WorkflowDownloader) *WorkflowRunn
 
 // RunWorkflowAnalysis orchestrates the download, parsing, recursive fetch, and tree/mermaid generation.
 func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, diagramType string) (string, error) {
-	slog.Debug("Running workflow analysis", "workflowURL", workflowURL, "depth", depth, "diagramType", diagramType)
 
 	data, err := wr.client.DownloadWorkflow(workflowURL)
 	if err != nil {
@@ -33,13 +32,15 @@ func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, dia
 	}
 	slog.Debug("Workflow content", "content", string(data[:min(300, len(data))]))
 
-	wf, err := github.ParseWorkflowYAML(data)
+	wf, err := github.ParseWorkflowYAML(workflowURL, data)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse workflow YAML: %w", err)
 	}
 
 	// Recursively collect all uses and build the tree
 	owner, repo, branch := extractRepoInfo(workflowURL)
+	slog.Debug("Extracted repo info", "owner", owner, "repo", repo, "branch", branch)
+
 	fetcher := func(uses string) *github.Workflow {
 		ar, ok := github.ParseActionRef(uses, owner, repo, branch)
 		if !ok {
@@ -58,7 +59,6 @@ func (wr *WorkflowRunner) RunWorkflowAnalysis(workflowURL string, depth int, dia
 	slog.Info("All uses found recursively", "uses", len(allUses))
 
 	tree := github.BuildUsesTree("workflow", wf, fetcher, depth, map[string]bool{})
-	slog.Info("Uses tree", "tree", tree)
 
 	// Mermaid diagram generation
 	fmt.Println("\nMermaid diagram:")
