@@ -1,0 +1,23 @@
+name: Reusable Workflow 3
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup step
+        run: echo "Setup in workflow 3"
+
+  test:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test step
+        run: echo "Test in workflow 3"
+
+  call_workflow_4:
+    needs: test
+    uses: .github/workflows/reusable-wf4.yml

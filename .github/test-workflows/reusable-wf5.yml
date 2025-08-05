@@ -1,0 +1,19 @@
+name: Reusable Workflow 5
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start step
+        run: echo "Start in workflow 5"
+
+  finalize:
+    needs: start
+    runs-on: ubuntu-latest
+    steps:
+      - name: Finalize step
+        run: echo "Finalize in workflow 5"

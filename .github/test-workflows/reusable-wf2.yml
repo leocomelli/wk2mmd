@@ -1,0 +1,23 @@
+name: Reusable Workflow 2
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare step
+        run: echo "Prepare in workflow 2"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build step
+        run: echo "Build in workflow 2"
+
+  call_workflow_3:
+    needs: build
+    uses: .github/workflows/reusable-wf3.yml

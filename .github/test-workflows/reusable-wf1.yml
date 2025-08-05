@@ -1,0 +1,23 @@
+name: Reusable Workflow 1
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  job_a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Job A Step
+        run: echo "Running job A in workflow 1 updated"
+
+  job_b:
+    needs: job_a
+    runs-on: ubuntu-latest
+    steps:
+      - name: Job B Step
+        run: echo "Running job B in workflow 1"
+
+  call_workflow_2:
+    needs: job_b
+    uses: .github/workflows/reusable-wf2.yml

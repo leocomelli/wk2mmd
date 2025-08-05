@@ -1,0 +1,23 @@
+name: Reusable Workflow 4
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Init step
+        run: echo "Init in workflow 4"
+
+  verify:
+    needs: init
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify step
+        run: echo "Verify in workflow 4"
+
+  call_workflow_5:
+    needs: verify
+    uses: .github/workflows/reusable-wf5.yml
