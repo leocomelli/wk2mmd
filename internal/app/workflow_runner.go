@@ -88,17 +88,3 @@ func extractRepoInfo(url string) (owner, repo, branch string) {
 	}
 	return "", "", ""
 }
-
-func printUsesTree(node *github.UsesNode, indent int) {
-	if node == nil {
-		return
-	}
-	fmt.Printf("%s- %s\n", spaces(indent), node.Name)
-	for _, child := range node.Children {
-		printUsesTree(child, indent+2)
-	}
-}
-
-func spaces(n int) string {
-	return fmt.Sprintf("%*s", n, "")
-}

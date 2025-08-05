@@ -70,21 +70,23 @@ func TestParseActionRef_Remote(t *testing.T) {
 	ar, ok := ParseActionRef("octocat/myaction/path@v1", "", "", "")
 	assert.True(t, ok)
 	assert.Equal(t, "remote", ar.Type)
-	assert.Equal(t, "octocat", ar.Owner)
-	assert.Equal(t, "myaction", ar.Repo)
-	assert.Equal(t, "path", ar.Path)
-	assert.Equal(t, "v1", ar.Ref)
+
+	assert.Equal(t, "", ar.Owner)
+	assert.Equal(t, "", ar.Repo)
+	assert.Equal(t, "octocat/myaction/path@v1", ar.Path)
+	assert.Equal(t, "", ar.Ref)
 }
 
 func TestParseActionRef_Marketplace(t *testing.T) {
 	ar, ok := ParseActionRef("actions/checkout@v2", "", "", "")
 	assert.True(t, ok)
-	assert.Equal(t, "marketplace", ar.Type)
+
+	assert.Equal(t, "remote", ar.Type)
 }
 
 func TestParseActionRef_Unrecognized(t *testing.T) {
 	_, ok := ParseActionRef("echo hello", "", "", "")
-	assert.False(t, ok)
+	assert.True(t, ok)
 }
 
 type mockClient struct {

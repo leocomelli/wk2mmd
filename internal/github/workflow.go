@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -65,29 +66,21 @@ func ParseWorkflowYAML(data []byte) (*Workflow, error) {
 // Returns (ActionRef, true) if recognized, or (zero, false) if not.
 func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) {
 	ar := ActionRef{Raw: uses}
+
+	// local action
 	if strings.HasPrefix(uses, "./") || strings.HasPrefix(uses, ".github/") {
 		ar.Type = "local"
-		ar.Owner = repoOwner
-		ar.Repo = repoName
-		ar.Ref = branch
 		ar.Path = uses
 		return ar, true
 	}
-	if strings.HasPrefix(uses, "actions/") && strings.Contains(uses, "@") {
-		ar.Type = "marketplace"
-		return ar, true
-	}
-	re := regexp.MustCompile(`^([^/]+)/([^/@]+)(/[^@]*)?@(.+)$`)
-	matches := re.FindStringSubmatch(uses)
-	if len(matches) == 5 {
-		ar.Type = "remote"
-		ar.Owner = matches[1]
-		ar.Repo = matches[2]
-		ar.Path = strings.TrimPrefix(matches[3], "/")
-		ar.Ref = matches[4]
-		return ar, true
-	}
-	return ActionRef{}, false
+
+	// remote action
+	ar.Type = "remote"
+	ar.Owner = repoOwner
+	ar.Repo = repoName
+	ar.Ref = branch
+	ar.Path = strings.TrimPrefix(uses, fmt.Sprintf("%s/%s/", repoOwner, repoName))
+	return ar, true
 }
 
 // FetchActionWorkflow tries to download and parse the action.yml or action.yaml for a given ActionRef.
@@ -98,14 +91,15 @@ func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 	case "local":
 		urls = []string{ar.Path}
 	case "remote":
-		base := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", ar.Owner, ar.Repo, ar.Ref, strings.TrimSuffix(ar.Path, "/"))
-		urls = []string{base + "/action.yml", base + "/action.yaml"}
+		url := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/refs/heads/%s/%s", ar.Owner, ar.Repo, ar.Ref, strings.TrimSuffix(ar.Path, "/"))
+		urls = []string{url}
 	default:
 		return nil
 	}
 	for _, url := range urls {
 		data, err := client.DownloadWorkflow(url)
 		if err != nil {
+			slog.Error("Failed to download workflow", "url", url, "error", err)
 			continue
 		}
 		wf, err := ParseWorkflowYAML(data)
@@ -189,18 +183,6 @@ func CollectAllUses(wf *Workflow, fetcher func(string) *Workflow, depth int) []s
 				}
 			}
 		}
-		// Step-level uses
-		// for _, step := range job.Steps {
-		// 	if step.Uses != "" {
-		// 		uses = append(uses, step.Uses)
-		// 		if fetcher != nil {
-		// 			childWf := fetcher(step.Uses)
-		// 			if childWf != nil {
-		// 				uses = append(uses, CollectAllUses(childWf, fetcher, depth-1)...)
-		// 			}
-		// 		}
-		// 	}
-		// }
 	}
 	return uses
 }
@@ -220,7 +202,10 @@ func (n *NeedsList) UnmarshalYAML(value *yaml.Node) error {
 	return fmt.Errorf("invalid needs field: %v", value.Value)
 }
 
-// ExtractRepoInfoRegex returns the regex to extract owner, repo, branch from a raw.githubusercontent.com URL.
+// ExtractRepoInfoRegex returns the regex to extract owner, repo, branch from a raw.githubusercontent.com or github.com/blob URL.
 func ExtractRepoInfoRegex() *regexp.Regexp {
-	return regexp.MustCompile(`https://raw.githubusercontent.com/([^/]+)/([^/]+)/([^/]+)/`)
+	// Supports:
+	// https://raw.githubusercontent.com/owner/repo/branch/path/to/file.yml
+	// https://github.com/owner/repo/blob/branch/path/to/file.yml
+	return regexp.MustCompile(`https://(?:raw\.githubusercontent\.com|github\.com)/([^/]+)/([^/]+)/(?:blob/)?([^/]+)/`)
 }

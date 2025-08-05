@@ -57,28 +57,26 @@ flowchart TB
     12 --> 13
     12 --> 14
 `
-	if !compareMermaidIgnoringOrder(output, expected) {
+	if !compareIgnoringOrder(output, expected) {
 		t.Errorf("Flowchart output does not match expected (order-agnostic).\nGot:\n%s\nExpected:\n%s", output, expected)
 	}
 }
 
-func compareMermaidIgnoringOrder(a, b string) bool {
-	alines := filterLines(a)
-	blines := filterLines(b)
-	sort.Strings(alines)
-	sort.Strings(blines)
-	if len(alines) != len(blines) {
+func compareIgnoringOrder(a, b string) bool {
+	linesA := filterAndSortLines(a)
+	linesB := filterAndSortLines(b)
+	if len(linesA) != len(linesB) {
 		return false
 	}
-	for i := range alines {
-		if alines[i] != blines[i] {
+	for i := range linesA {
+		if linesA[i] != linesB[i] {
 			return false
 		}
 	}
 	return true
 }
 
-func filterLines(s string) []string {
+func filterAndSortLines(s string) []string {
 	var lines []string
 	for _, line := range strings.Split(s, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -86,5 +84,6 @@ func filterLines(s string) []string {
 			lines = append(lines, trimmed)
 		}
 	}
+	sort.Strings(lines)
 	return lines
 }
