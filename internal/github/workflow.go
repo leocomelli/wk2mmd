@@ -116,19 +116,26 @@ func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 
 	slog.Debug("Fetching action workflow", "urls", urls)
 
+	skippedURLs := 0
 	for _, url := range urls {
 		data, err := client.DownloadWorkflow(url)
 		if err != nil {
 			slog.Debug("Failed to download workflow", "url", url, "error", err)
+			skippedURLs++
+
 			continue
 		}
 		wf, err := ParseWorkflowYAML(url, data)
 		if err == nil && wf != nil && len(wf.Jobs) > 0 {
 			return wf
 		}
+
+		slog.Debug("Failed to parse workflow", "url", url, "error", err)
 	}
 
-	slog.Error("All urls failed to download workflow", "urls", urls)
+	if skippedURLs == len(urls) {
+		slog.Warn("All urls failed to download workflow", "urls", urls)
+	}
 
 	return nil
 }
