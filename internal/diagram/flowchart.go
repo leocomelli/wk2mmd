@@ -22,8 +22,11 @@ func buildFlowchartNodes(fc *flowchart.Flowchart, node *github.UsesNode, nodeMap
 	if node == nil {
 		return
 	}
-	if _, exists := nodeMap[node.Name]; !exists {
-		nodeMap[node.Name] = fc.AddNode(node.Name)
+	if _, exists := nodeMap[node.UniqueID]; !exists {
+		n := fc.AddNode(node.UniqueID)
+		n.Text = node.Name
+
+		nodeMap[node.UniqueID] = n
 	}
 	for _, child := range node.Children {
 		buildFlowchartNodes(fc, child, nodeMap)
@@ -35,9 +38,9 @@ func addFlowchartLinks(fc *flowchart.Flowchart, node *github.UsesNode, nodeMap m
 	if node == nil {
 		return
 	}
-	from := nodeMap[node.Name]
+	from := nodeMap[node.UniqueID]
 	for _, child := range node.Children {
-		to := nodeMap[child.Name]
+		to := nodeMap[child.UniqueID]
 		if from != nil && to != nil {
 			fc.AddLink(from, to)
 		}

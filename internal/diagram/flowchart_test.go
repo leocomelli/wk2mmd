@@ -11,9 +11,10 @@ func TestGenerateMermaidFlowchart_Simple(t *testing.T) {
 	root := &github.UsesNode{
 		Name: "root",
 		Children: []*github.UsesNode{
-			{Name: "a"},
-			{Name: "b"},
+			{Name: "a", UniqueID: "root/a"},
+			{Name: "b", UniqueID: "root/b"},
 		},
+		UniqueID: "root",
 	}
 
 	result := GenerateMermaidFlowchart(root)

@@ -18,8 +18,8 @@ func buildSequenceActors(diagram *sequence.Diagram, node *github.UsesNode, nodeM
 	if node == nil {
 		return
 	}
-	if _, exists := nodeMap[node.Name]; !exists {
-		nodeMap[node.Name] = diagram.AddActor(node.Name, node.Name, sequence.ActorParticipant)
+	if _, exists := nodeMap[node.UniqueID]; !exists {
+		nodeMap[node.UniqueID] = diagram.AddActor(node.UniqueID, node.Name, sequence.ActorParticipant)
 	}
 	for _, child := range node.Children {
 		buildSequenceActors(diagram, child, nodeMap)
@@ -30,9 +30,9 @@ func addSequenceMessages(diagram *sequence.Diagram, node *github.UsesNode, nodeM
 	if node == nil {
 		return
 	}
-	from := nodeMap[node.Name]
+	from := nodeMap[node.UniqueID]
 	for _, child := range node.Children {
-		to := nodeMap[child.Name]
+		to := nodeMap[child.UniqueID]
 		if from != nil && to != nil {
 			diagram.AddMessage(from, to, sequence.MessageSolid, "uses")
 		}

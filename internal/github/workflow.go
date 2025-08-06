@@ -43,9 +43,10 @@ type ActionRef struct {
 	Raw   string // original uses string
 }
 
-// UsesNode represents a node in the uses dependency tree.
+// UsesNode representa um nó na árvore de dependências de uses.
 type UsesNode struct {
 	Name     string
+	UniqueID string // Novo campo para identificador único
 	Children []*UsesNode
 }
 
@@ -129,31 +130,39 @@ func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 
 // BuildUsesTree builds a hierarchical tree of uses dependencies starting from the given workflow.
 func BuildUsesTree(name string, wf *Workflow, fetcher func(string) *Workflow, depth int, visited map[string]bool) *UsesNode {
-	if depth == 0 || wf == nil || visited[name] {
+	return buildUsesTreeRecursive(name, wf, fetcher, depth, visited, "")
+}
+
+// buildUsesTreeRecursive é a versão recursiva que carrega o caminho até o nó.
+func buildUsesTreeRecursive(name string, wf *Workflow, fetcher func(string) *Workflow, depth int, visited map[string]bool, path string) *UsesNode {
+	if depth == 0 || wf == nil || visited[path+"/"+name] {
 		return nil
 	}
-	visited[name] = true
-
-	node := &UsesNode{Name: name}
+	visited[path+"/"+name] = true
+	uniqueID := path + "/" + name
+	if path == "" {
+		uniqueID = name
+	}
+	node := &UsesNode{Name: name, UniqueID: uniqueID}
 	for jobName, job := range wf.Jobs {
 		if job.Uses != "" {
-			child := &UsesNode{Name: jobName}
+			child := &UsesNode{Name: jobName, UniqueID: uniqueID + "/" + jobName}
 			if fetcher != nil && depth > 1 {
 				childWf := fetcher(job.Uses)
 				if childWf != nil {
 					for subJobName, subJob := range childWf.Jobs {
 						if subJob.Uses != "" && fetcher != nil && depth > 2 {
 							subChildWf := fetcher(subJob.Uses)
-							subChild := &UsesNode{Name: subJobName}
+							subChild := &UsesNode{Name: subJobName, UniqueID: child.UniqueID + "/" + subJobName}
 							if subChildWf != nil {
-								subtree := BuildUsesTree(subJobName, subChildWf, fetcher, depth-2, visited)
+								subtree := buildUsesTreeRecursive(subJobName, subChildWf, fetcher, depth-2, visited, child.UniqueID)
 								if subtree != nil {
 									subChild.Children = subtree.Children
 								}
 							}
 							child.Children = append(child.Children, subChild)
 						} else {
-							child.Children = append(child.Children, &UsesNode{Name: subJobName})
+							child.Children = append(child.Children, &UsesNode{Name: subJobName, UniqueID: child.UniqueID + "/" + subJobName})
 						}
 					}
 				}
@@ -162,14 +171,14 @@ func BuildUsesTree(name string, wf *Workflow, fetcher func(string) *Workflow, de
 			continue
 		}
 		// If not a reusable, just add the job and its steps
-		jobNode := &UsesNode{Name: jobName}
+		jobNode := &UsesNode{Name: jobName, UniqueID: uniqueID + "/" + jobName}
 		for _, step := range job.Steps {
 			if step.Uses != "" {
-				stepNode := &UsesNode{Name: step.Uses}
+				stepNode := &UsesNode{Name: step.Uses, UniqueID: jobNode.UniqueID + "/" + step.Uses}
 				if fetcher != nil && depth > 1 {
 					childWf := fetcher(step.Uses)
 					if childWf != nil {
-						subtree := BuildUsesTree(step.Uses, childWf, fetcher, depth-1, visited)
+						subtree := buildUsesTreeRecursive(step.Uses, childWf, fetcher, depth-1, visited, jobNode.UniqueID)
 						if subtree != nil {
 							stepNode.Children = subtree.Children
 						}
