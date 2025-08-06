@@ -75,12 +75,19 @@ func ParseActionRef(uses, repoOwner, repoName, branch string) (ActionRef, bool) 
 		return ar, true
 	}
 
-	// remote action
-	ar.Type = "remote"
-	ar.Owner = repoOwner
-	ar.Repo = repoName
-	ar.Ref = branch
-	ar.Path = strings.TrimPrefix(uses, fmt.Sprintf("%s/%s/", repoOwner, repoName))
+	// remote action: owner/repo/path@ref
+	re := regexp.MustCompile(`^([^/]+)/([^/]+)/(.*?)(?:@(.+))?$`)
+	matches := re.FindStringSubmatch(uses)
+	if len(matches) == 5 {
+		ar.Type = "remote"
+		ar.Owner = matches[1]
+		ar.Repo = matches[2]
+		ar.Path = matches[3]
+		ar.Ref = matches[4]
+		if ar.Ref == "" {
+			ar.Ref = "main"
+		}
+	}
 
 	slog.Debug("Identified a remote action", "uses", uses, "owner", ar.Owner, "repo", ar.Repo, "ref", ar.Ref, "path", ar.Path)
 

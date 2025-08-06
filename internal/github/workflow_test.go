@@ -70,18 +70,70 @@ func TestParseActionRef_Remote(t *testing.T) {
 	ar, ok := ParseActionRef("octocat/myaction/path@v1", "", "", "")
 	assert.True(t, ok)
 	assert.Equal(t, "remote", ar.Type)
+	assert.Equal(t, "octocat", ar.Owner)
+	assert.Equal(t, "myaction", ar.Repo)
+	assert.Equal(t, "path", ar.Path)
+	assert.Equal(t, "v1", ar.Ref)
+}
 
+func TestParseActionRef_Remote_WithRef(t *testing.T) {
+	ar, ok := ParseActionRef("octocat/myaction/path@v1", "", "", "")
+	assert.True(t, ok)
+	assert.Equal(t, "remote", ar.Type)
+	assert.Equal(t, "octocat", ar.Owner)
+	assert.Equal(t, "myaction", ar.Repo)
+	assert.Equal(t, "path", ar.Path)
+	assert.Equal(t, "v1", ar.Ref)
+}
+
+func TestParseActionRef_Remote_WithoutRef(t *testing.T) {
+	ar, ok := ParseActionRef("octocat/myaction/path", "", "", "")
+	assert.True(t, ok)
+	assert.Equal(t, "remote", ar.Type)
+	assert.Equal(t, "octocat", ar.Owner)
+	assert.Equal(t, "myaction", ar.Repo)
+	assert.Equal(t, "path", ar.Path)
+	assert.Equal(t, "main", ar.Ref) // default branch
+}
+
+func TestParseActionRef_Remote_WithSubdirAndRef(t *testing.T) {
+	ar, ok := ParseActionRef("octocat/myaction/some/dir/file.yml@feature-branch", "", "", "")
+	assert.True(t, ok)
+	assert.Equal(t, "remote", ar.Type)
+	assert.Equal(t, "octocat", ar.Owner)
+	assert.Equal(t, "myaction", ar.Repo)
+	assert.Equal(t, "some/dir/file.yml", ar.Path)
+	assert.Equal(t, "feature-branch", ar.Ref)
+}
+
+func TestParseActionRef_Remote_WithSubdirNoRef(t *testing.T) {
+	ar, ok := ParseActionRef("octocat/myaction/some/dir/file.yml", "", "", "")
+	assert.True(t, ok)
+	assert.Equal(t, "remote", ar.Type)
+	assert.Equal(t, "octocat", ar.Owner)
+	assert.Equal(t, "myaction", ar.Repo)
+	assert.Equal(t, "some/dir/file.yml", ar.Path)
+	assert.Equal(t, "main", ar.Ref)
+}
+
+func TestParseActionRef_Invalid(t *testing.T) {
+	ar, ok := ParseActionRef("echo hello", "", "", "")
+	assert.True(t, ok)
+	assert.Equal(t, "", ar.Type)
 	assert.Equal(t, "", ar.Owner)
 	assert.Equal(t, "", ar.Repo)
-	assert.Equal(t, "octocat/myaction/path@v1", ar.Path)
+	assert.Equal(t, "", ar.Path)
 	assert.Equal(t, "", ar.Ref)
 }
 
 func TestParseActionRef_Marketplace(t *testing.T) {
 	ar, ok := ParseActionRef("actions/checkout@v2", "", "", "")
 	assert.True(t, ok)
-
-	assert.Equal(t, "remote", ar.Type)
+	assert.Equal(t, "", ar.Type)
+	assert.Equal(t, "", ar.Owner)
+	assert.Equal(t, "", ar.Repo)
+	assert.Equal(t, "", ar.Path)
+	assert.Equal(t, "", ar.Ref)
 }
 
 func TestParseActionRef_Unrecognized(t *testing.T) {
