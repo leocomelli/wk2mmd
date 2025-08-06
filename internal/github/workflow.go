@@ -102,8 +102,11 @@ func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 	case "local":
 		urls = []string{ar.Path}
 	case "remote":
-		url := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/refs/heads/%s/%s", ar.Owner, ar.Repo, ar.Ref, strings.TrimSuffix(ar.Path, "/"))
-		urls = []string{url}
+		base := fmt.Sprintf("https://raw.githubusercontent.com/%s/%s", ar.Owner, ar.Repo)
+		urls = []string{
+			fmt.Sprintf("%s/refs/heads/%s/%s", base, ar.Ref, strings.TrimSuffix(ar.Path, "/")),
+			fmt.Sprintf("%s/refs/tags/%s/%s", base, ar.Ref, strings.TrimSuffix(ar.Path, "/")),
+		}
 	default:
 		return nil
 	}
