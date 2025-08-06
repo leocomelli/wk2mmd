@@ -11,6 +11,13 @@ jobs:
       - name: Init step
         run: echo "Init in workflow 4"
 
+  build:
+    needs: init
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build step
+        run: echo "Build in workflow 4"
+
   verify:
     needs: init
     runs-on: ubuntu-latest
