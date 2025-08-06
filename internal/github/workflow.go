@@ -107,6 +107,8 @@ func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 		urls = []string{
 			fmt.Sprintf("%s/refs/heads/%s/%s", base, ar.Ref, strings.TrimSuffix(ar.Path, "/")),
 			fmt.Sprintf("%s/refs/tags/%s/%s", base, ar.Ref, strings.TrimSuffix(ar.Path, "/")),
+			fmt.Sprintf("%s/refs/heads/%s/%s/action.yml", base, ar.Ref, strings.TrimSuffix(ar.Path, "/")),
+			fmt.Sprintf("%s/refs/tags/%s/%s/action.yml", base, ar.Ref, strings.TrimSuffix(ar.Path, "/")),
 		}
 	default:
 		return nil
@@ -117,7 +119,7 @@ func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 	for _, url := range urls {
 		data, err := client.DownloadWorkflow(url)
 		if err != nil {
-			slog.Error("Failed to download workflow", "url", url, "error", err)
+			slog.Debug("Failed to download workflow", "url", url, "error", err)
 			continue
 		}
 		wf, err := ParseWorkflowYAML(url, data)
@@ -125,6 +127,9 @@ func FetchActionWorkflow(client WorkflowDownloader, ar ActionRef) *Workflow {
 			return wf
 		}
 	}
+
+	slog.Error("All urls failed to download workflow", "urls", urls)
+
 	return nil
 }
 
